@@ -1,0 +1,538 @@
+{% extends "base.html" %}
+
+{% block title %}Live Dashboard — FoodFlow{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  /* ── LIVE INDICATOR ──────────────────────────────── */
+  .live-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: livepulse 1.4s ease-in-out infinite;
+  }
+  @keyframes livepulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+    50%       { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+  }
+
+  /* ── FLASH ANIMATION on update ───────────────────── */
+  @keyframes flash-green {
+    0%   { background: rgba(34,197,94,0.18); }
+    100% { background: transparent; }
+  }
+  @keyframes flash-orange {
+    0%   { background: rgba(249,115,22,0.18); }
+    100% { background: transparent; }
+  }
+  .flash-new  { animation: flash-green  0.7s ease-out; }
+  .flash-upd  { animation: flash-orange 0.7s ease-out; }
+
+  /* ── SLIDE IN for new rows ───────────────────────── */
+  @keyframes slidein {
+    from { opacity: 0; transform: translateX(-12px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .row-new { animation: slidein 0.35s ease-out; }
+
+  /* ── COUNTERS ────────────────────────────────────── */
+  .kpi-value {
+    font-family: var(--font-head);
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+    transition: color 0.3s;
+  }
+  .kpi-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 8px;
+  }
+  .kpi-sub {
+    font-size: 12px;
+    color: var(--text-2);
+    margin-top: 6px;
+  }
+
+  /* ── FEED ────────────────────────────────────────── */
+  .feed-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: background 0.3s;
+  }
+  .feed-dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .feed-dot.confirmed { background: var(--green); }
+  .feed-dot.detail    { background: var(--accent); }
+
+  /* ── ORDER TABLE ─────────────────────────────────── */
+  .order-row td { transition: background 0.3s; }
+
+  /* ── STATUS PILLS ────────────────────────────────── */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.02em;
+  }
+  .pill::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+  .pill-pending    { background: var(--amber-lo);  color: var(--amber);  }
+  .pill-pending::before    { background: var(--amber); }
+  .pill-confirmed  { background: var(--green-lo);  color: var(--green);  }
+  .pill-confirmed::before  { background: var(--green); }
+  .pill-failed     { background: var(--red-lo);    color: var(--red);    }
+  .pill-failed::before     { background: var(--red); }
+  .pill-processing { background: var(--blue-lo);   color: var(--blue);   }
+  .pill-processing::before { background: var(--blue); }
+
+  /* ── TIMESTAMP ───────────────────────────────────── */
+  .ts-badge {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-3);
+    padding: 2px 8px;
+    background: var(--surface);
+    border-radius: 5px;
+    border: 1px solid var(--border);
+  }
+
+  /* ── LAYOUT TWEAKS ───────────────────────────────── */
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 900px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+
+  .section-title {
+    font-family: var(--font-head);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .feed-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 340px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /* Connection status banner */
+  #conn-banner {
+    display: none;
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--red);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 10px;
+    z-index: 999;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- PAGE HEADER -->
+<div class="page-header flex items-center justify-between" style="margin-bottom:28px">
+  <div>
+    <h1 style="font-size:28px">
+      Live Dashboard
+      <span style="margin-left:10px;vertical-align:middle">
+        <span class="live-dot"></span>
+      </span>
+    </h1>
+    <p style="margin-top:4px">
+      Flux Kafka en temps réel ·
+      <code style="font-size:12px;color:var(--accent);background:var(--accent-lo);padding:2px 7px;border-radius:5px">order_detail</code>
+      →
+      <code style="font-size:12px;color:var(--green);background:var(--green-lo);padding:2px 7px;border-radius:5px">order_confirmed</code>
+    </p>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="last-update" class="ts-badge">--:--:--</span>
+    <select id="period-sel" onchange="location.href='?period='+this.value"
+            style="background:var(--card);border:1px solid var(--border-hi);border-radius:8px;color:var(--text);font-size:13px;padding:7px 12px;outline:none">
+      <option value="7"  {% if period == "7"  %}selected{% endif %}>7 jours</option>
+      <option value="30" {% if period == "30" %}selected{% endif %}>30 jours</option>
+      <option value="90" {% if period == "90" %}selected{% endif %}>90 jours</option>
+    </select>
+  </div>
+</div>
+
+<!-- KPI CARDS -->
+<div class="grid-4" style="margin-bottom:24px">
+  <div class="card" style="padding:20px 22px">
+    <div class="kpi-label">Commandes totales</div>
+    <div class="kpi-value" id="kpi-total" style="color:var(--text)">{{ kpis.total_orders }}</div>
+    <div class="kpi-sub" id="kpi-pending">En attente : —</div>
+  </div>
+  <div class="card" style="padding:20px 22px">
+    <div class="kpi-label">Confirmées aujourd'hui</div>
+    <div class="kpi-value" id="kpi-confirmed" style="color:var(--green)">{{ kpis.total_orders }}</div>
+    <div class="kpi-sub">Kafka → order_confirmed</div>
+  </div>
+  <div class="card" style="padding:20px 22px">
+    <div class="kpi-label">Revenu total</div>
+    <div class="kpi-value" id="kpi-revenue" style="color:var(--accent)">{{ kpis.revenue }} <span style="font-size:16px;font-weight:400">DT</span></div>
+    <div class="kpi-sub" id="kpi-revenue-today">Aujourd'hui : —</div>
+  </div>
+  <div class="card" style="padding:20px 22px">
+    <div class="kpi-label">Panier moyen</div>
+    <div class="kpi-value" id="kpi-avg" style="color:var(--blue)">{{ kpis.avg_order }} <span style="font-size:16px;font-weight:400">DT</span></div>
+    <div class="kpi-sub">Sur toutes les confirmées</div>
+  </div>
+</div>
+
+<!-- MAIN GRID: Feed + Orders table -->
+<div style="display:grid;grid-template-columns:340px 1fr;gap:20px;margin-bottom:24px;align-items:start">
+
+  <!-- KAFKA EVENT FEED -->
+  <div class="card" style="padding:20px">
+    <div class="section-title">
+      <span class="live-dot" style="width:7px;height:7px"></span>
+      Flux Kafka
+    </div>
+    <div class="feed-scroll" id="kafka-feed">
+      {% for event in kafka_events %}
+      <div class="feed-item">
+        <span class="feed-dot {% if event.topic == 'order_confirmed' %}confirmed{% else %}detail{% endif %}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--accent);font-family:monospace">{{ event.topic }}</div>
+          <div style="font-size:13px;font-weight:500">{{ event.customer_name }}</div>
+          <div style="font-size:11px;color:var(--text-3)">order #{{ event.order_id }} · {{ event.total_amount }} DT</div>
+        </div>
+        <span class="ts-badge">{{ event.received_at|date:"H:i:s" }}</span>
+      </div>
+      {% empty %}
+      <div style="text-align:center;padding:32px 16px;color:var(--text-3);font-size:13px">
+        <div style="font-size:28px;margin-bottom:8px">📡</div>
+        En attente d'événements Kafka…
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ORDERS TABLE -->
+  <div class="card" style="padding:20px">
+    <div class="section-title">
+      <span>Commandes en temps réel</span>
+      <span id="order-count" style="margin-left:auto;font-size:12px;font-weight:400;color:var(--text-2);text-transform:none;letter-spacing:0"></span>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:0 12px 10px;border-bottom:1px solid var(--border)">ID</th>
+            <th style="text-align:left;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:0 12px 10px;border-bottom:1px solid var(--border)">Client</th>
+            <th style="text-align:left;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:0 12px 10px;border-bottom:1px solid var(--border)">Articles</th>
+            <th style="text-align:right;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:0 12px 10px;border-bottom:1px solid var(--border)">Total</th>
+            <th style="text-align:left;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:0 12px 10px;border-bottom:1px solid var(--border)">Statut</th>
+            <th style="text-align:left;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-3);padding:0 12px 10px;border-bottom:1px solid var(--border)">Reçu à</th>
+          </tr>
+        </thead>
+        <tbody id="orders-tbody">
+          {% for order in recent_orders %}
+          <tr class="order-row" data-id="{{ order.id }}" data-status="{{ order.status }}">
+            <td style="padding:11px 12px;font-size:13px;border-bottom:1px solid var(--border)">
+              <a href="{% url 'orders:detail' order.id %}" style="color:var(--accent);text-decoration:none;font-family:monospace">#{{ order.id|stringformat:"05d" }}</a>
+            </td>
+            <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
+              <div style="font-size:13px;font-weight:500">{{ order.customer_name }}</div>
+              <div style="font-size:11px;color:var(--text-3)">{{ order.customer_email }}</div>
+            </td>
+            <td style="padding:11px 12px;font-size:12px;color:var(--text-2);border-bottom:1px solid var(--border)">
+              {% for item in order.items.all|slice:":2" %}{{ item.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+              {% if order.items.count > 2 %}<span style="color:var(--text-3)"> +{{ order.items.count|add:"-2" }}</span>{% endif %}
+            </td>
+            <td style="padding:11px 12px;font-weight:600;text-align:right;border-bottom:1px solid var(--border)">{{ order.total_amount }} DT</td>
+            <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
+              <span class="pill pill-{{ order.status }}">{{ order.get_status_display }}</span>
+            </td>
+            <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
+              <span class="ts-badge">{{ order.created_at|date:"H:i:s" }}</span>
+            </td>
+          </tr>
+          {% empty %}
+          <tr id="empty-row">
+            <td colspan="6" style="text-align:center;padding:48px;color:var(--text-3);font-size:13px">
+              Aucune commande pour l'instant.<br>
+              <a href="{% url 'orders:create' %}" style="color:var(--accent);text-decoration:none;margin-top:6px;display:inline-block">Créer une commande →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- CHARTS ROW -->
+<div class="grid-2" style="gap:20px">
+  <div class="card">
+    <div class="section-title">Commandes par jour</div>
+    <div style="position:relative;height:200px">
+      <canvas id="ordersChart"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">Revenus par jour (DT)</div>
+    <div style="position:relative;height:200px">
+      <canvas id="revenueChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Connection error banner -->
+<div id="conn-banner">⚠ Connexion SSE perdue — reconnexion…</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Chart.js setup ──────────────────────────────────────────────────
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a58', font: { size: 10 } } },
+    y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a58', font: { size: 10 } }, beginAtZero: true }
+  }
+};
+
+const labels      = {{ chart_labels | safe }};
+const ordersData  = {{ chart_orders  | safe }};
+const revenueData = {{ chart_revenue| safe }};
+
+const ordersChart = new Chart(document.getElementById('ordersChart'), {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [{
+      data: ordersData,
+      backgroundColor: 'rgba(249,115,22,0.7)',
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: chartDefaults
+});
+
+const revenueChart = new Chart(document.getElementById('revenueChart'), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [{
+      data: revenueData,
+      borderColor: '#22c55e',
+      backgroundColor: 'rgba(34,197,94,0.08)',
+      borderWidth: 2,
+      pointBackgroundColor: '#22c55e',
+      pointRadius: 3,
+      fill: true,
+      tension: 0.4,
+    }]
+  },
+  options: chartDefaults
+});
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function animateValue(el, newVal) {
+  const old = parseFloat(el.dataset.val || 0);
+  if (old === newVal) return;
+  el.dataset.val = newVal;
+  el.classList.remove('flash-new', 'flash-upd');
+  void el.offsetWidth; // reflow
+  el.classList.add(newVal > old ? 'flash-new' : 'flash-upd');
+}
+
+function statusPill(status, label) {
+  return `<span class="pill pill-${status}">${label}</span>`;
+}
+
+const STATUS_LABELS = {
+  'pending':    'En attente',
+  'processing': 'En traitement',
+  'confirmed':  'Confirmé',
+  'failed':     'Échoué',
+};
+
+// ── Update KPIs ───────────────────────────────────────────────────────
+function updateKPIs(kpis) {
+  const setKpi = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    animateValue(el, val);
+    el.textContent = val;
+  };
+  setKpi('kpi-total', kpis.total);
+  setKpi('kpi-confirmed', kpis.confirmed_today);
+  setKpi('kpi-revenue', kpis.revenue_total + ' DT');
+  setKpi('kpi-avg', kpis.avg_order + ' DT');
+
+  const pendingEl = document.getElementById('kpi-pending');
+  if (pendingEl) pendingEl.textContent = `En attente : ${kpis.pending}`;
+
+  const rtEl = document.getElementById('kpi-revenue-today');
+  if (rtEl) rtEl.textContent = `Aujourd'hui : ${kpis.revenue_today} DT`;
+}
+
+// ── Update Kafka Feed ─────────────────────────────────────────────────
+let lastFeedIds = new Set();
+
+function updateFeed(events) {
+  const feed = document.getElementById('kafka-feed');
+  if (!feed || !events.length) return;
+
+  const newIds = new Set(events.map((e, i) => `${e.order_id}-${e.received_at}`));
+  const hasNew = [...newIds].some(id => !lastFeedIds.has(id));
+  if (!hasNew) return;
+
+  lastFeedIds = newIds;
+
+  feed.innerHTML = events.map((e, i) => {
+    const isConfirmed = e.topic === 'order_confirmed';
+    const isNew = i === 0;
+    return `
+      <div class="feed-item ${isNew ? 'row-new' : ''}">
+        <span class="feed-dot ${isConfirmed ? 'confirmed' : 'detail'}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:${isConfirmed ? 'var(--green)' : 'var(--accent)'};font-family:monospace">${e.topic}</div>
+          <div style="font-size:13px;font-weight:500">${e.customer_name}</div>
+          <div style="font-size:11px;color:var(--text-3)">order #${e.order_id} · ${e.total_amount.toFixed(2)} DT</div>
+        </div>
+        <span class="ts-badge">${e.received_at}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Update Orders Table ───────────────────────────────────────────────
+let knownOrders = {};
+
+function updateOrders(orders) {
+  const tbody = document.getElementById('orders-tbody');
+  if (!tbody) return;
+
+  const emptyRow = document.getElementById('empty-row');
+  if (orders.length && emptyRow) emptyRow.remove();
+
+  const countEl = document.getElementById('order-count');
+  if (countEl) countEl.textContent = `${orders.length} commandes`;
+
+  orders.forEach(order => {
+    const existingRow = tbody.querySelector(`tr[data-id="${order.id}"]`);
+    const pill = statusPill(order.status, order.status_display || STATUS_LABELS[order.status] || order.status);
+
+    if (!existingRow) {
+      // New row — prepend
+      const tr = document.createElement('tr');
+      tr.className = 'order-row row-new';
+      tr.dataset.id = order.id;
+      tr.dataset.status = order.status;
+      tr.innerHTML = `
+        <td style="padding:11px 12px;font-size:13px;border-bottom:1px solid var(--border)">
+          <a href="/orders/${order.id}/" style="color:var(--accent);text-decoration:none;font-family:monospace">#${String(order.id).padStart(5,'0')}</a>
+        </td>
+        <td style="padding:11px 12px;border-bottom:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:500">${order.customer_name}</div>
+          <div style="font-size:11px;color:var(--text-3)">${order.customer_email}</div>
+        </td>
+        <td style="padding:11px 12px;font-size:12px;color:var(--text-2);border-bottom:1px solid var(--border)">${order.item_names}${order.items_count > 2 ? ` <span style="color:var(--text-3)">+${order.items_count - 2}</span>` : ''}</td>
+        <td style="padding:11px 12px;font-weight:600;text-align:right;border-bottom:1px solid var(--border)">${order.total_amount.toFixed(2)} DT</td>
+        <td style="padding:11px 12px;border-bottom:1px solid var(--border)">${pill}</td>
+        <td style="padding:11px 12px;border-bottom:1px solid var(--border)"><span class="ts-badge">${order.created_at}</span></td>
+      `;
+      tbody.insertBefore(tr, tbody.firstChild);
+      // Remove oldest if > 15
+      const rows = tbody.querySelectorAll('tr.order-row');
+      if (rows.length > 15) rows[rows.length - 1].remove();
+
+    } else {
+      // Update status if changed
+      const prevStatus = existingRow.dataset.status;
+      if (prevStatus !== order.status) {
+        existingRow.dataset.status = order.status;
+        const pillCell = existingRow.querySelector('td:nth-child(5)');
+        if (pillCell) {
+          pillCell.innerHTML = pill;
+          existingRow.classList.remove('flash-new', 'flash-upd');
+          void existingRow.offsetWidth;
+          existingRow.classList.add('flash-new');
+        }
+      }
+    }
+    knownOrders[order.id] = order.status;
+  });
+}
+
+// ── SSE Connection ────────────────────────────────────────────────────
+let retryDelay = 2000;
+
+function connectSSE() {
+  const banner = document.getElementById('conn-banner');
+  const tsEl   = document.getElementById('last-update');
+
+  const es = new EventSource("{% url 'analytics:stream' %}");
+
+  es.onopen = () => {
+    banner.style.display = 'none';
+    retryDelay = 2000;
+  };
+
+  es.onmessage = (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (data.error) { console.warn('SSE error:', data.error); return; }
+
+      if (tsEl) tsEl.textContent = data.ts;
+      updateKPIs(data.kpis);
+      updateFeed(data.events || []);
+      updateOrders(data.orders || []);
+    } catch(e) {
+      console.error('SSE parse error:', e);
+    }
+  };
+
+  es.onerror = () => {
+    banner.style.display = 'block';
+    es.close();
+    setTimeout(connectSSE, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 30000);
+  };
+}
+
+connectSSE();
+</script>
+{% endblock %}

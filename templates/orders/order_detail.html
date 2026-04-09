@@ -1,0 +1,525 @@
+{% extends "base.html" %}
+
+{% block title %}Commande #{{ order.id }} — FoodFlow{% endblock %}
+
+{% block extra_css %}
+<style>
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+    70%  { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
+    100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--green);
+    padding: 4px 10px;
+    background: var(--green-lo);
+    border-radius: 20px;
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .live-dot-anim {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse-ring 1.5s ease-in-out infinite;
+  }
+
+  .step-dot {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700;
+    flex-shrink: 0;
+    transition: all 0.4s ease;
+    border: 2px solid var(--border);
+    background: var(--card);
+    color: var(--text-3);
+  }
+  .step-dot.done {
+    border-color: var(--green);
+    background: var(--green-lo);
+    color: var(--green);
+    animation: pulse-ring 0.5s ease-out;
+  }
+  .step-dot.active {
+    border-color: var(--accent);
+    background: var(--accent-lo);
+    color: var(--accent);
+  }
+  .step-dot.spinning::after {
+    content: '';
+    position: absolute;
+    width: 20px; height: 20px;
+    border: 2px solid transparent;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  .step-dot.spinning { position: relative; }
+
+  .step-label {
+    font-size: 14px;
+    font-weight: 500;
+    transition: color 0.3s;
+  }
+  .step-sub {
+    font-size: 12px;
+    color: var(--text-3);
+    margin-top: 3px;
+    transition: all 0.3s;
+  }
+  .step-sub.active { color: var(--accent); }
+  .step-sub.done   { color: var(--green); }
+
+  .connector {
+    width: 1px;
+    height: 28px;
+    background: var(--border);
+    margin: 4px 0 4px 17px;
+    transition: background 0.4s;
+  }
+  .connector.done { background: var(--green); }
+
+  .status-bar {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    margin: 20px 0;
+    overflow: hidden;
+  }
+  .status-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--green));
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .info-row {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-key {
+    font-size: 12px;
+    color: var(--text-3);
+    width: 100px;
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .info-val { font-size: 14px; }
+
+  .event-log {
+    font-family: monospace;
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .log-line {
+    animation: fadeSlideIn 0.3s ease-out;
+  }
+  .log-line .ts  { color: var(--text-3); }
+  .log-line .ev  { color: var(--accent); }
+  .log-line .ok  { color: var(--green); }
+  .log-line .info { color: var(--blue); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <div style="font-size:13px;color:var(--text-3);margin-bottom:4px">
+      <a href="{% url 'orders:list' %}" style="color:var(--text-2);text-decoration:none">Commandes</a>
+      / #{{ order.id|stringformat:"05d" }}
+    </div>
+    <h1>Commande <span class="text-accent">#{{ order.id|stringformat:"05d" }}</span></h1>
+    <p>{{ order.customer_name }} · {{ order.created_at|date:"d F Y, H:i" }}</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    {% if order.status != 'confirmed' and order.status != 'failed' %}
+    <span class="live-badge">
+      <span class="live-dot-anim"></span>
+      Suivi en direct
+    </span>
+    {% endif %}
+    <span id="status-badge" class="badge badge-{{ order.status }}" style="font-size:14px;padding:6px 14px">
+      {{ order.get_status_display }}
+    </span>
+  </div>
+</div>
+
+<div class="grid-2" style="align-items:start;gap:24px">
+
+  <!-- Colonne gauche : infos commande -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+
+    <!-- Articles -->
+    <div class="card">
+      <div class="card-title">Articles commandés</div>
+      {% for item in order.items.all %}
+      <div class="info-row">
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:14px">{{ item.name }}</div>
+          <div style="font-size:12px;color:var(--text-3)">Qté : {{ item.quantity }} × {{ item.price }} DT</div>
+        </div>
+        <div style="font-weight:600;color:var(--accent)">{{ item.subtotal }} DT</div>
+      </div>
+      {% endfor %}
+      <div style="display:flex;justify-content:space-between;padding-top:14px;margin-top:4px;border-top:1px solid var(--border)">
+        <span style="color:var(--text-2);font-size:13px">Total</span>
+        <span style="font-family:var(--font-head);font-size:22px;font-weight:700;color:var(--accent)">{{ order.total_amount }} DT</span>
+      </div>
+    </div>
+
+    <!-- Infos client -->
+    <div class="card">
+      <div class="card-title">Client</div>
+      <div class="info-row"><span class="info-key">Nom</span><span class="info-val">{{ order.customer_name }}</span></div>
+      <div class="info-row"><span class="info-key">Email</span><span class="info-val">{{ order.customer_email }}</span></div>
+      <div class="info-row"><span class="info-key">Adresse</span><span class="info-val">{{ order.delivery_address }}</span></div>
+      {% if order.notes %}
+      <div class="info-row"><span class="info-key">Notes</span><span class="info-val" style="color:var(--text-2)">{{ order.notes }}</span></div>
+      {% endif %}
+    </div>
+
+    <!-- Paiement (affiché quand disponible) -->
+    <div class="card" id="payment-card" style="{% if not order.payment %}display:none{% endif %}">
+      <div class="card-title">Paiement</div>
+      <div class="info-row">
+        <span class="info-key">Référence</span>
+        <span class="info-val text-mono text-accent" id="pay-ref">{{ order.payment.reference|default:"—" }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-key">Méthode</span>
+        <span class="info-val" id="pay-method">{{ order.payment.get_method_display|default:"—" }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-key">Statut</span>
+        <span id="pay-status">
+          {% if order.payment %}
+          <span class="badge badge-{{ order.payment.status }}">{{ order.payment.get_status_display }}</span>
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Colonne droite : suivi Kafka temps réel -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+
+    <div class="card">
+      <div class="flex items-center justify-between" style="margin-bottom:4px">
+        <div class="card-title" style="margin-bottom:0">Suivi Kafka temps réel</div>
+        <span id="poll-indicator" style="font-size:11px;color:var(--text-3)">Polling…</span>
+      </div>
+
+      <!-- Barre de progression -->
+      <div class="status-bar">
+        <div class="status-bar-fill" id="progress-bar" style="width:{{ order.status|yesno:'100,0,25' }}%"></div>
+      </div>
+
+      <!-- Steps -->
+      <div style="display:flex;flex-direction:column">
+
+        <!-- Step 1 : Commande reçue -->
+        <div style="display:flex;gap:14px;align-items:flex-start">
+          <div class="step-dot done" id="step1-dot">✓</div>
+          <div style="flex:1;padding-top:6px">
+            <div class="step-label">Commande créée</div>
+            <div class="step-sub done">
+              {{ order.created_at|date:"H:i:s" }} ·
+              <code style="font-size:11px;color:var(--accent)">order_details</code> publié
+            </div>
+          </div>
+        </div>
+
+        <div class="connector done" id="conn1"></div>
+
+        <!-- Step 2 : Transaction / paiement -->
+        <div style="display:flex;gap:14px;align-items:flex-start">
+          <div class="step-dot {% if order.status == 'pending' %}active{% elif order.status != 'pending' %}done{% endif %}"
+               id="step2-dot">
+            {% if order.status == 'pending' %}2{% else %}✓{% endif %}
+          </div>
+          <div style="flex:1;padding-top:6px">
+            <div class="step-label">Traitement paiement</div>
+            <div class="step-sub {% if order.status == 'processing' or order.status == 'confirmed' %}done{% elif order.status == 'pending' %}active{% endif %}"
+                 id="step2-sub">
+              {% if order.payment %}
+                {{ order.payment.created_at|date:"H:i:s" }} · {{ order.payment.get_method_display }}
+              {% elif order.status == 'pending' %}
+                En attente de transaction_consumer…
+              {% else %}
+                Traitement en cours…
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="connector {% if order.status == 'confirmed' %}done{% endif %}" id="conn2"></div>
+
+        <!-- Step 3 : Confirmé -->
+        <div style="display:flex;gap:14px;align-items:flex-start">
+          <div class="step-dot {% if order.status == 'confirmed' %}done{% elif order.status == 'processing' %}active{% endif %}"
+               id="step3-dot">
+            {% if order.status == 'confirmed' %}✓{% else %}3{% endif %}
+          </div>
+          <div style="flex:1;padding-top:6px">
+            <div class="step-label">Commande confirmée</div>
+            <div class="step-sub {% if order.status == 'confirmed' %}done{% endif %}"
+                 id="step3-sub">
+              {% if order.confirmed_at %}
+                {{ order.confirmed_at|date:"H:i:s" }} · <code style="font-size:11px;color:var(--green)">order_confirmed</code>
+              {% else %}
+                En attente d'analytics_consumer…
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="connector {% if order.notification_sent %}done{% endif %}" id="conn3"></div>
+
+        <!-- Step 4 : Notification -->
+        <div style="display:flex;gap:14px;align-items:flex-start">
+          <div class="step-dot {% if order.notification_sent %}done{% endif %}"
+               id="step4-dot">
+            {% if order.notification_sent %}✓{% else %}4{% endif %}
+          </div>
+          <div style="flex:1;padding-top:6px">
+            <div class="step-label">Email / notification</div>
+            <div class="step-sub {% if order.notification_sent %}done{% endif %}"
+                 id="step4-sub">
+              {% if order.notification_sent %}
+                Email envoyé à {{ order.customer_email }}
+              {% else %}
+                En attente d'email_consumer…
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /steps -->
+    </div><!-- /card -->
+
+    <!-- Event log -->
+    <div class="card" style="padding:18px 20px">
+      <div class="card-title" style="margin-bottom:10px">Journal d'événements</div>
+      <div class="event-log" id="event-log">
+        <div class="log-line">
+          <span class="ts">[{{ order.created_at|date:"H:i:s" }}]</span>
+          <span class="ev"> ORDER_CREATED</span>
+          <span> #{{ order.id }} → Kafka order_details ✓</span>
+        </div>
+        {% if order.payment %}
+        <div class="log-line">
+          <span class="ts">[{{ order.payment.created_at|date:"H:i:s" }}]</span>
+          <span class="ok"> PAYMENT_CONFIRMED</span>
+          <span> {{ order.payment.reference }}</span>
+        </div>
+        {% endif %}
+        {% if order.confirmed_at %}
+        <div class="log-line">
+          <span class="ts">[{{ order.confirmed_at|date:"H:i:s" }}]</span>
+          <span class="ok"> ORDER_CONFIRMED</span>
+          <span> Kafka order_confirmed ✓</span>
+        </div>
+        {% endif %}
+        {% if order.notification_sent %}
+        <div class="log-line">
+          <span class="ts">[-]</span>
+          <span class="info"> EMAIL_SENT</span>
+          <span> → {{ order.customer_email }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <a href="{% url 'orders:list' %}" class="btn btn-ghost" style="justify-content:center">← Retour aux commandes</a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const ORDER_ID = {{ order.id }};
+const STATUS_API = "{% url 'orders:status_api' order.id %}";
+
+// État initial depuis Django
+let currentStatus = "{{ order.status }}";
+let notificationSent = {{ order.notification_sent|yesno:"true,false" }};
+let hasPayment = {{ order.payment|yesno:"true,false" }};
+
+const STATUS_PROGRESS = {
+  'pending':    10,
+  'processing': 55,
+  'confirmed':  100,
+  'failed':     100,
+};
+
+const STATUS_COLORS = {
+  'pending':    'var(--amber)',
+  'processing': 'var(--blue)',
+  'confirmed':  'var(--green)',
+  'failed':     'var(--red)',
+};
+
+const STATUS_LABELS = {
+  'pending':    'En attente',
+  'processing': 'En traitement',
+  'confirmed':  'Confirmé',
+  'failed':     'Échoué',
+};
+
+// ── Ajouter une ligne au log ──────────────────────────────────────────
+function addLog(ts, cls, event, detail) {
+  const log = document.getElementById('event-log');
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="ts">[${ts}]</span> <span class="${cls}">${event}</span> <span>${detail}</span>`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── Mettre à jour les steps visuels ──────────────────────────────────
+function updateSteps(data) {
+  const s = data.status;
+
+  // Progress bar
+  const prog = STATUS_PROGRESS[s] || 0;
+  document.getElementById('progress-bar').style.width = prog + '%';
+
+  // Status badge
+  const badge = document.getElementById('status-badge');
+  badge.className = `badge badge-${s}`;
+  badge.textContent = STATUS_LABELS[s] || s;
+
+  // Step 2 — processing
+  const dot2 = document.getElementById('step2-dot');
+  const sub2 = document.getElementById('step2-sub');
+  if (s === 'processing' || s === 'confirmed') {
+    dot2.className = 'step-dot done';
+    dot2.textContent = '✓';
+    if (data.payment_ref) {
+      sub2.className = 'step-sub done';
+      sub2.innerHTML = `Paiement <code style="font-size:11px">${data.payment_ref}</code>`;
+    }
+  } else if (s === 'pending') {
+    dot2.className = 'step-dot active';
+    dot2.textContent = '2';
+  }
+
+  // Connector 2
+  if (s === 'confirmed') {
+    document.getElementById('conn2').classList.add('done');
+  }
+
+  // Step 3 — confirmed
+  const dot3 = document.getElementById('step3-dot');
+  const sub3 = document.getElementById('step3-sub');
+  if (s === 'confirmed') {
+    dot3.className = 'step-dot done';
+    dot3.textContent = '✓';
+    if (data.confirmed_at) {
+      sub3.className = 'step-sub done';
+      sub3.innerHTML = `${data.confirmed_at} · <code style="font-size:11px;color:var(--green)">order_confirmed</code>`;
+    }
+  } else if (s === 'processing') {
+    dot3.className = 'step-dot active';
+    dot3.textContent = '3';
+    sub3.className = 'step-sub active';
+    sub3.textContent = 'En attente d\'analytics_consumer…';
+  }
+
+  // Step 4 — notification
+  const dot4 = document.getElementById('step4-dot');
+  const sub4 = document.getElementById('step4-sub');
+  if (data.notification_sent) {
+    dot4.className = 'step-dot done';
+    dot4.textContent = '✓';
+    sub4.className = 'step-sub done';
+    sub4.textContent = 'Email envoyé ✓';
+    document.getElementById('conn3').classList.add('done');
+  }
+
+  // Payment card
+  if (data.payment_ref && !hasPayment) {
+    hasPayment = true;
+    document.getElementById('payment-card').style.display = 'block';
+    document.getElementById('pay-ref').textContent = data.payment_ref;
+    if (data.payment_method) document.getElementById('pay-method').textContent = data.payment_method;
+  }
+}
+
+// ── Polling SSE-like toutes les 2s ────────────────────────────────────
+let pollInterval;
+let prevStatus = currentStatus;
+let prevNotif  = notificationSent;
+
+function poll() {
+  fetch(STATUS_API)
+    .then(r => r.json())
+    .then(data => {
+      const now = new Date().toLocaleTimeString('fr-FR');
+      document.getElementById('poll-indicator').textContent = `Mis à jour ${now}`;
+
+      // Log si changement de statut
+      if (data.status !== prevStatus) {
+        if (data.status === 'processing') {
+          addLog(now, 'ev', ' PROCESSING', '← transaction_consumer lu order_details');
+          if (data.payment_ref) {
+            addLog(now, 'ok', ' PAYMENT_CONFIRMED', data.payment_ref);
+          }
+        }
+        if (data.status === 'confirmed') {
+          addLog(data.confirmed_at || now, 'ok', ' ORDER_CONFIRMED', '← analytics_consumer lu order_confirmed ✓');
+        }
+        prevStatus = data.status;
+      }
+
+      if (data.notification_sent && !prevNotif) {
+        addLog(now, 'info', ' EMAIL_SENT', `→ email_consumer envoyé`);
+        prevNotif = true;
+      }
+
+      updateSteps(data);
+
+      // Arrêter le polling quand tout est fini
+      if (data.status === 'confirmed' && data.notification_sent) {
+        clearInterval(pollInterval);
+        document.getElementById('poll-indicator').textContent = '✓ Terminé';
+      }
+    })
+    .catch(() => {
+      document.getElementById('poll-indicator').textContent = '⚠ Erreur réseau';
+    });
+}
+
+// Démarre le polling seulement si commande pas encore terminée
+if (currentStatus !== 'confirmed' || !notificationSent) {
+  pollInterval = setInterval(poll, 2000);
+  poll(); // premier appel immédiat
+}
+</script>
+{% endblock %}

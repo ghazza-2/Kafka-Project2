@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Paiements — FoodFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Paiements <span class="text-accent">·</span></h1>
+  <p>Consomme <code style="font-size:13px;color:var(--accent);background:var(--accent-lo);padding:2px 7px;border-radius:5px">order_detail</code> · publie <code style="font-size:13px;color:var(--green);background:var(--green-lo);padding:2px 7px;border-radius:5px">order_confirmed</code></p>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total traités</div>
+    <div class="stat-value">{{ stats.total|default:"0" }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Confirmés</div>
+    <div class="stat-value" style="color:var(--green)">{{ stats.confirmed|default:"0" }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Échoués</div>
+    <div class="stat-value" style="color:var(--red)">{{ stats.failed|default:"0" }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Volume</div>
+    <div class="stat-value" style="color:var(--accent)">{{ stats.volume|default:"0" }}<span style="font-size:16px;font-weight:400"> DT</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Historique des paiements</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Commande</th>
+          <th>Client</th>
+          <th>Méthode</th>
+          <th>Montant</th>
+          <th>Statut</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for payment in payments %}
+        <tr>
+          <td class="text-mono text-accent">{{ payment.reference }}</td>
+          <td>
+            <a href="{% url 'orders:detail' payment.order.id %}"
+               style="color:var(--text-2);text-decoration:none;font-size:13px">
+              #{{ payment.order.id|stringformat:"05d" }} →
+            </a>
+          </td>
+          <td style="font-size:14px">{{ payment.order.customer_name }}</td>
+          <td>
+            <span style="font-size:13px;background:var(--border);padding:3px 9px;border-radius:6px">
+              {{ payment.get_method_display }}
+            </span>
+          </td>
+          <td style="font-weight:600">{{ payment.amount }} DT</td>
+          <td><span class="badge badge-{{ payment.status }}">{{ payment.get_status_display }}</span></td>
+          <td style="color:var(--text-2);font-size:13px">{{ payment.created_at|date:"d M, H:i" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" style="text-align:center;padding:48px;color:var(--text-3)">
+            Aucun paiement traité pour l'instant.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

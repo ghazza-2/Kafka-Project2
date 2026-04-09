@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications — FoodFlow{% endblock %}
+
+{% block content %}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Notifications <span class="text-accent">·</span></h1>
+    <p>Consomme <code style="font-size:13px;color:var(--green);background:var(--green-lo);padding:2px 7px;border-radius:5px">order_confirmed</code> · envoie SMS / email</p>
+  </div>
+  {% if unread_count > 0 %}
+  <span class="badge badge-processing" style="font-size:14px;padding:6px 14px">
+    {{ unread_count }} non lue{{ unread_count|pluralize }}
+  </span>
+  {% endif %}
+</div>
+
+<!-- Filtres -->
+<div style="display:flex;gap:8px;margin-bottom:24px">
+  <a href="?type=" class="btn {% if not request.GET.type %}btn-primary{% else %}btn-ghost{% endif %}" style="padding:8px 16px;font-size:13px">Toutes</a>
+  <a href="?type=email" class="btn {% if request.GET.type == 'email' %}btn-primary{% else %}btn-ghost{% endif %}" style="padding:8px 16px;font-size:13px">Email</a>
+  <a href="?type=sms"   class="btn {% if request.GET.type == 'sms'   %}btn-primary{% else %}btn-ghost{% endif %}" style="padding:8px 16px;font-size:13px">SMS</a>
+  <a href="?type=push"  class="btn {% if request.GET.type == 'push'  %}btn-primary{% else %}btn-ghost{% endif %}" style="padding:8px 16px;font-size:13px">Push</a>
+</div>
+
+<!-- Liste notifications -->
+<div style="display:flex;flex-direction:column;gap:10px">
+  {% for notif in notifications %}
+  <div class="card" style="display:flex;align-items:center;gap:16px;padding:18px 22px;{% if not notif.is_read %}border-color:rgba(249,115,22,0.25){% endif %}">
+
+    <!-- Icône type -->
+    <div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;{% if notif.type == 'email' %}background:var(--blue-lo){% elif notif.type == 'sms' %}background:var(--green-lo){% else %}background:var(--accent-lo){% endif %}">
+      {% if notif.type == 'email' %}✉
+      {% elif notif.type == 'sms' %}💬
+      {% else %}🔔{% endif %}
+    </div>
+
+    <!-- Contenu -->
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+        <span style="font-weight:500;font-size:14px">{{ notif.title }}</span>
+        {% if not notif.is_read %}
+          <span style="width:7px;height:7px;background:var(--accent);border-radius:50%;flex-shrink:0"></span>
+        {% endif %}
+      </div>
+      <div style="font-size:13px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        {{ notif.message }}
+      </div>
+      <div style="display:flex;gap:12px;margin-top:5px">
+        <span style="font-size:12px;color:var(--text-3)">{{ notif.sent_at|date:"d M Y, H:i" }}</span>
+        <span style="font-size:12px;color:var(--text-3)">→ {{ notif.recipient }}</span>
+        <a href="{% url 'orders:detail' notif.order.id %}" style="font-size:12px;color:var(--text-2);text-decoration:none">
+          Commande #{{ notif.order.id|stringformat:"05d" }} →
+        </a>
+      </div>
+    </div>
+
+    <!-- Statut envoi -->
+    <span class="badge badge-{% if notif.sent %}confirmed{% else %}failed{% endif %}" style="flex-shrink:0">
+      {% if notif.sent %}Envoyé{% else %}Échoué{% endif %}
+    </span>
+  </div>
+  {% empty %}
+  <div class="card" style="text-align:center;padding:64px 24px">
+    <div style="font-size:40px;margin-bottom:12px">🔔</div>
+    <div style="color:var(--text-2);font-size:15px">Aucune notification pour l'instant.</div>
+    <div style="color:var(--text-3);font-size:13px;margin-top:4px">Elles apparaîtront quand des commandes seront confirmées.</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if notifications.has_other_pages %}
+<div class="flex items-center gap-8" style="margin-top:24px;justify-content:center">
+  {% if notifications.has_previous %}
+    <a href="?page={{ notifications.previous_page_number }}" class="btn btn-ghost">← Préc.</a>
+  {% endif %}
+  <span style="font-size:13px;color:var(--text-2)">Page {{ notifications.number }} / {{ notifications.paginator.num_pages }}</span>
+  {% if notifications.has_next %}
+    <a href="?page={{ notifications.next_page_number }}" class="btn btn-ghost">Suiv. →</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Auto-refresh toutes les 10s pour les nouvelles notifications
+  setTimeout(() => location.reload(), 10000);
+</script>
+{% endblock %}

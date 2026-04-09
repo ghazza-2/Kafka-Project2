@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Commandes — FoodFlow{% endblock %}
+
+{% block content %}
+<div class="page-header flex items-center justify-between">
+  <div>
+    <h1>Commandes <span class="text-accent">·</span></h1>
+    <p>Toutes les commandes en cours et passées</p>
+  </div>
+  <a href="{% url 'orders:create' %}" class="btn btn-primary">
+    + Nouvelle commande
+  </a>
+</div>
+
+<!-- Stats rapides -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total</div>
+    <div class="stat-value">{{ stats.total|default:"0" }}</div>
+    <div class="stat-sub">commandes</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">En attente</div>
+    <div class="stat-value" style="color:var(--amber)">{{ stats.pending|default:"0" }}</div>
+    <div class="stat-sub">à traiter</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Confirmées</div>
+    <div class="stat-value" style="color:var(--green)">{{ stats.confirmed|default:"0" }}</div>
+    <div class="stat-sub">aujourd'hui</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Revenus</div>
+    <div class="stat-value" style="color:var(--accent)">{{ stats.revenue|default:"0" }}<span style="font-size:16px;font-weight:400"> DT</span></div>
+    <div class="stat-sub">ce mois</div>
+  </div>
+</div>
+
+<!-- Table des commandes -->
+<div class="card">
+  <div class="flex items-center justify-between" style="margin-bottom:16px">
+    <div class="card-title" style="margin-bottom:0">Toutes les commandes</div>
+    <form method="get" style="display:flex;gap:8px">
+      <input type="text" name="q" value="{{ request.GET.q }}" placeholder="Rechercher…"
+             style="background:var(--surface);border:1px solid var(--border-hi);border-radius:8px;color:var(--text);font-size:13px;padding:7px 12px;outline:none;width:220px">
+      <select name="status" style="background:var(--surface);border:1px solid var(--border-hi);border-radius:8px;color:var(--text);font-size:13px;padding:7px 12px;outline:none">
+        <option value="">Tous les statuts</option>
+        <option value="pending"   {% if request.GET.status == "pending"    %}selected{% endif %}>En attente</option>
+        <option value="confirmed" {% if request.GET.status == "confirmed"  %}selected{% endif %}>Confirmé</option>
+        <option value="failed"    {% if request.GET.status == "failed"     %}selected{% endif %}>Échoué</option>
+      </select>
+      <button type="submit" class="btn btn-ghost" style="padding:7px 14px;font-size:13px">Filtrer</button>
+    </form>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Client</th>
+          <th>Articles</th>
+          <th>Total</th>
+          <th>Statut</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr>
+          <td class="text-mono text-accent">#{{ order.id|stringformat:"05d" }}</td>
+          <td>
+            <div style="font-weight:500">{{ order.customer_name }}</div>
+            <div style="font-size:12px;color:var(--text-3)">{{ order.customer_email }}</div>
+          </td>
+          <td>
+            <div style="font-size:13px;color:var(--text-2)">
+              {% for item in order.items.all|slice:":2" %}
+                {{ item.name }}{% if not forloop.last %}, {% endif %}
+              {% endfor %}
+              {% if order.items.count > 2 %}
+                <span style="color:var(--text-3)">+{{ order.items.count|add:"-2" }} autres</span>
+              {% endif %}
+            </div>
+          </td>
+          <td style="font-weight:500">{{ order.total_amount }} DT</td>
+          <td>
+            <span class="badge badge-{{ order.status }}">
+              {{ order.get_status_display }}
+            </span>
+          </td>
+          <td style="color:var(--text-2);font-size:13px">{{ order.created_at|date:"d M, H:i" }}</td>
+          <td>
+            <a href="{% url 'orders:detail' order.id %}" class="btn btn-ghost" style="padding:6px 12px;font-size:12px">Voir →</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" style="text-align:center;padding:48px 16px;color:var(--text-3)">
+            Aucune commande pour l'instant.<br>
+            <a href="{% url 'orders:create' %}" style="color:var(--accent);text-decoration:none;font-size:13px;margin-top:8px;display:inline-block">Créer la première →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if orders.has_other_pages %}
+  <div class="flex items-center gap-8" style="margin-top:20px;justify-content:flex-end">
+    {% if orders.has_previous %}
+      <a href="?page={{ orders.previous_page_number }}" class="btn btn-ghost" style="padding:6px 12px;font-size:13px">← Préc.</a>
+    {% endif %}
+    <span style="font-size:13px;color:var(--text-2)">Page {{ orders.number }} / {{ orders.paginator.num_pages }}</span>
+    {% if orders.has_next %}
+      <a href="?page={{ orders.next_page_number }}" class="btn btn-ghost" style="padding:6px 12px;font-size:13px">Suiv. →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
